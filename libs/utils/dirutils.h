@@ -18,8 +18,6 @@
 /* -- Global Variables ---------------------------------------------------- */
 
 /* -- Function Prototypes ------------------------------------------------- */
-bool dirutils_directory_exists(const std::string& path);
-int dirutils_file_size(const std::string& path); //returns size of file. return -1 if file does not exist
 
 
 /* -- Implementation ------------------------------------------------------ */
@@ -30,6 +28,7 @@ public:
    DirectoryNavigator(char delimiter = '/');
    std::string changeDirectory(std::string path = "");
    std::string getCurrentDirectory() const;
+   static bool directoryExists(const std::string& path);
 
 private:
    static std::string parsePath(std::string path, char delimiter);
@@ -38,6 +37,22 @@ private:
    std::string current;
 };
 
+
+//implementation for Linux
+class DirectoryNavigatorLinux : public DirectoryNavigator
+{
+public:
+   static bool directoryExists(const std::string& path);
+};
+
+
+//implementation for Windows
+class DirectoryNavigatorWindows : public DirectoryNavigator
+{
+public:
+   DirectoryNavigatorWindows() : DirectoryNavigator('\\') { }
+   static bool directoryExists(const std::string& path);
+};
 
 
 

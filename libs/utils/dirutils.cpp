@@ -25,22 +25,10 @@ using namespace std;
 
 
 
-bool dirutils_directory_exists(const string& path)
+bool DirectoryNavigator::directoryExists(const string& path)
 {
-   DIR* dir = opendir(path.c_str());
-   if (dir != NULL)
-   {
-      closedir(dir); //yes, directory exists -> can be closed again
-      return true;
-   }
-   return false;
-}
-
-
-//returns size of file. return -1 if file does not exist
-int dirutils_file_size(const std::string& path)
-{
-   return -1;
+   return false; //always return false.
+                  //there should be a derived class, that implements that function according to the underlying OS.
 }
 
 
@@ -57,7 +45,7 @@ string DirectoryNavigator::changeDirectory(std::string path)
    //change to root
    if (path.length() == 0)
    {
-      current.clear();
+      current = "";
       return current;
    }
 
@@ -118,27 +106,27 @@ string DirectoryNavigator::parsePath(string path, const char delimiter)
       if (directories[it].length() == 1)
       {
          //delete this entry
-         directories[it].clear();
+         directories[it] = "";
          continue;
       }
       //self
       if (directories[it] == self)
       {
          //delete this entry
-         directories[it].clear();
+         directories[it] = "";
          continue;
       }
       //parent
       if (directories[it] == parent)
       {
          //delete this entry
-         directories[it].clear();
+         directories[it] = "";
          //delete also the previous, non-empty entry
          for (prev = it; prev > 0; --prev)
          {
             if (directories[prev - 1].length() > 0)
             {
-               directories[prev - 1].clear();
+               directories[prev - 1] = "";
                break;
             }
          }
@@ -147,7 +135,7 @@ string DirectoryNavigator::parsePath(string path, const char delimiter)
    }
 
    //assemble new path
-   path.clear();
+   path = "";
    for (it = 0; it < idx; ++it)
    {
       path += directories[it];
