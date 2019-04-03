@@ -43,10 +43,176 @@ static void m_signal_handler(int a)
 
 
 
+
+class DummyClient : public FileXferClientApp
+{
+public:
+   static string statusText(int status)
+   {
+      if (status == 0)
+      {
+         return "NACK";
+      }
+      else
+      {
+         return "ACK";
+      }
+   }
+
+   static string errorText(int status)
+   {
+      if (status == 0)
+      {
+         return "OK";
+      }
+      else
+      {
+         return "FEHLER";
+      }
+   }
+
+
+
+public:
+   void onPwdResponse(int status, const std::string& dir)
+   {
+      cout << "onPwdResponse: " << statusText(status) << endl;
+      cout << dir << endl;
+      cout << endl;
+   }
+
+
+   void onCdResponse(int status, const std::string& dir)
+   {
+      cout << "onCdResponse: " << statusText(status) << endl;
+      cout << dir << endl;
+      cout << endl;
+   }
+
+
+   void onLsResponse(int status, const std::string& dir)
+   {
+      cout << "onLsResponse: " << statusText(status) << endl;
+      cout << dir << endl;
+      cout << endl;
+   }
+
+
+   void onDirResponse(int status, const std::string& dir)
+   {
+      cout << "onDirResponse: " << statusText(status) << endl;
+      cout << dir << endl;
+      cout << endl;
+   }
+
+
+   void onMkdirResponse(int status)
+   {
+      cout << "onMkdirResponse: " << statusText(status) << endl;
+      cout << endl;
+   }
+
+
+   void onRmResponse(int status)
+   {
+      cout << "onRmResponse: " << statusText(status) << endl;
+      cout << endl;
+   }
+
+
+   void onDownloadResponse(int status)
+   {
+      cout << "onDownloadResponse: " << statusText(status) << endl;
+      cout << endl;
+   }
+
+
+   void onUploadResponse(int status)
+   {
+      cout << "onUploadResponse: " << statusText(status) << endl;
+      cout << endl;
+   }
+
+
+   void onQuitResponse(int status)
+   {
+      cout << "onQuitResponse: " << statusText(status) << endl;
+      cout << endl;
+   }
+
+
+
+   //file operation
+   bool openFileForRead(const std::string& file, FileHandle_t * handle)
+   {
+      cout << "openFileForRead: " << file << endl;
+      *handle = 1;
+      return true;
+   }
+
+
+   bool openFileForWrite(const std::string& file, FileHandle_t * handle)
+   {
+      cout << "openFileForWrite: " << file << endl;
+      *handle = 2;
+      return true;
+   }
+
+
+   size_t getFileSize(FileHandle_t file)
+   {
+      cout << "getFileSize=26" << endl;
+      return 26;
+   }
+
+
+   size_t readFromFile(FileHandle_t file, unsigned char * buffer, size_t bufferSize)
+   {
+      for (int i = 0; i < 26; ++i)
+      {
+         buffer[i] = 'a' + i;
+      }
+      cout << "readFromFile=26" << endl;
+      return 26;
+   }
+
+
+   size_t writeToFile(FileHandle_t file, const unsigned char * data, size_t length)
+   {
+      char * hack = (char *)data;
+      hack[length] = 0;
+      cout << "writeToFile: " << hack << endl;
+      return length;
+   }
+
+
+   void closeFile(FileHandle_t file)
+   {
+      cout << "closeFile" << endl;
+      //nothing todo
+   }
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 int main(int argc, char * argv[])
 {
    char buffer[512];
    unsigned int count;
+   int status;
+   const char * path;
 
    //check command line arguments
    if (argc < 2)
@@ -84,8 +250,10 @@ int main(int argc, char * argv[])
       return -4;
    }
 
+
    //fxClient
-   FileXferClient fxClient(controlChannel, dataChannel);
+   DummyClient appClient;
+   FileXferClient fxClient(controlChannel, dataChannel, &appClient);
 
    //start application
    cout << "fx_client is using " << argv[1] << endl;
@@ -97,29 +265,89 @@ int main(int argc, char * argv[])
    signal(SIGINT, &m_signal_handler);
 
    buffer[0] = 0;
-   while (!ctrlC && (buffer[0] != 'x'))
+   while (!ctrlC && (buffer[0] != 'X'))
    {
+      cout << endl << "------------------------------" << endl;
       cout << "Enter command" << endl;
       cin >> buffer;
       count = strlen(buffer);
       buffer[count++] = 0; //add zero termination
-      controlChannel->send((const unsigned char *)buffer, count);
 
-      //fake an upload
-      if (buffer[0] == 'U')
+      switch (buffer[0])
       {
-         upload_alphabet((const unsigned char *)buffer, count, dataChannel);
+      case FILE_XFER_CMD_PWD:
+         status = fxClient.workingDirectory();
+         cout << "PWD" << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      case FILE_XFER_CMD_CD:
+         path = (const char *)&buffer[1];
+         status = fxClient.changeDirectory(path);
+         cout << "CD " << path << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      case FILE_XFER_CMD_LS:
+         status = fxClient.listDirectory();
+         cout << "LS" << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      case FILE_XFER_CMD_DIR:
+         path = (const char *)&buffer[1];
+         status = fxClient.changeListDirectory(path);
+         cout << "DIR " << path << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      case FILE_XFER_CMD_MKDIR:
+         path = (const char *)&buffer[1];
+         status = fxClient.makeDirectory(path);
+         cout << "MKDIR " << path << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      case FILE_XFER_CMD_RM:
+         path = (const char *)&buffer[1];
+         status = fxClient.removeFile(path);
+         cout << "RM " << path << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      case FILE_XFER_CMD_DOWNLOAD:
+         path = (const char *)&buffer[1];
+         status = fxClient.downloadFile(path, path);
+         cout << "DOWNLOAD" << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      case FILE_XFER_CMD_UPLOAD:
+         path = (const char *)&buffer[1];
+         status = fxClient.uploadFile(path, path);
+         cout << "UPLOAD" << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      case FILE_XFER_CMD_QUIT:
+         status = fxClient.quit();
+         cout << "QUIT" << endl;
+         cout << DummyClient::errorText(status) << endl;
+         break;
+
+      default:
+         break;
       }
 
-      //enter super-loop
-      unsigned int looper = 0;
-      while (looper < 5000)
+
+      //run app
+      while (!fxClient.isIdle())
       {
          slay2.task();
-         fxClient.task();
+         fxClient.task(slay2.getTime1ms());
          usleep(300); //5 chars @ 115200 bps takes about 300us
-         ++looper;
       }
+      usleep(300); //5 chars @ 115200 bps takes about 300us
    }
 
    //shut down application
@@ -130,6 +358,7 @@ int main(int argc, char * argv[])
 }
 
 
+#if 0
 static void upload_alphabet(const unsigned char * const data, const unsigned int len,
                             Slay2Channel * dataChannel)
 {
@@ -164,3 +393,4 @@ static void upload_alphabet(const unsigned char * const data, const unsigned int
       }
    }
 }
+#endif

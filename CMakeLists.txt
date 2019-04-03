@@ -8,6 +8,7 @@ add_executable(fx_server
    server.cpp
    src/file_xfer_server.cpp
    libs/utils/dirutils.cpp
+   libs/utils/dirutils_linux.cpp
    libs/slay2/crc32.c
    libs/slay2/slay2_buffer.cpp
    libs/slay2/slay2_scheduler.cpp
@@ -20,7 +21,6 @@ add_executable(fx_server
 add_executable(fx_client
    client.cpp
    src/file_xfer_client.cpp
-   libs/utils/dirutils.cpp
    libs/slay2/crc32.c
    libs/slay2/slay2_buffer.cpp
    libs/slay2/slay2_scheduler.cpp

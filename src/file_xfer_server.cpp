@@ -71,6 +71,11 @@ FileXferServer::FileXferServer(Slay2Channel * ctrl, Slay2Channel * data, const c
 //-------------------------------------------------------------------------------------------------
 void FileXferServer::onCtrlFrame(void * const obj, const unsigned char * const data, const unsigned int len)
 {
+   //ensure zero termination
+   ((unsigned char *)data)[len] = 0; //thats a hack ... but works mit SLAY2 :-)   //forward to member function
+   // cout << "onCtrlFrame is called. len=" << len << endl;
+   // cout << data << endl;
+
    //forward to member function
    ((FileXferServer *)obj)->onCtrlFrame(data, len);
 }
@@ -307,6 +312,11 @@ void FileXferServer::onCtrlFrame(const unsigned char * const data, const unsigne
 //currently only used, when client uploads a file
 void FileXferServer::onDataFrame(void * const obj, const unsigned char * const data, const unsigned int len)
 {
+   //ensure zero termination
+   ((unsigned char *)data)[len] = 0; //thats a hack ... but works mit SLAY2 :-)   //forward to member function
+   // cout << "onDataFrame is called. len=" << len << endl;
+   // cout << data << endl;
+
    //forward to member function
    ((FileXferServer *)obj)->onDataFrame(data, len);
 }
@@ -412,7 +422,7 @@ bool FileXferServer::onCD_Command(const char * path, bool response)
    DirectoryNavigator tmp = currentDir; //use a tmp copy
    tmp.changeDirectory(path);
    //check if that directory exists ...
-   if (dirutils_directory_exists(rootDir + tmp.getCurrentDirectory())) //prefix root directory
+   if (DirectoryNavigatorLinux::directoryExists(rootDir + tmp.getCurrentDirectory())) //prefix root directory
    {
       currentDir = tmp;
       if (response)
@@ -439,10 +449,10 @@ bool FileXferServer::onCD_Command(const char * path, bool response)
    Files and directory list is responsed on data channel.
    A listing may look like this:
 
-   <type>,<name>,<size>,<data>\n    <-- 1st line contains the current directory (type = '.'). Sent by this function!
-   <type>,<name>,<size>,<data>\n    <-- the other lines, are sent by execLS_Command function.
+   <type>,<name>,<size>,<date>\n    <-- 1st line contains the current directory (type = '.'). Sent by this function!
+   <type>,<name>,<size>,<date>\n    <-- the other lines, are sent by execLS_Command function.
    ...
-   <type>,<name>,<size>,<data>\n
+   <type>,<name>,<size>,<date>\n
    \0                               <-- end of list
 
 
@@ -463,7 +473,7 @@ bool FileXferServer::onCD_Command(const char * path, bool response)
    - size of file, in bytes
    - empty, for "non-file-types"
 
-   <data>
+   <date>
    - last modification date of file. format: "YYYY-mm-dd HH:MM:SS"
    - empty, for "non-file-types"
 
@@ -521,10 +531,13 @@ void FileXferServer::execLS_Command()
       {
          if (ent->d_type == DT_DIR) //directory
          {
-            dataChannel->send((const unsigned char *)"d,", 2, true); //directory
-            dataChannel->send((const unsigned char *)ent->d_name, strlen(ent->d_name), true); //name
-            dataChannel->send((const unsigned char *)",,\n", 3, true); //no size, no date
-            // std::cout << "LS <dir>: " << ent->d_name << endl;
+            if (strcmp(ent->d_name, ".") != 0) //skip "." directory
+            {
+               dataChannel->send((const unsigned char *)"d,", 2, true); //directory
+               dataChannel->send((const unsigned char *)ent->d_name, strlen(ent->d_name), true); //name
+               dataChannel->send((const unsigned char *)",,\n", 3, true); //no size, no date
+               // std::cout << "LS <dir>: " << ent->d_name << endl;
+            }
          }
          else // regular file
          {
@@ -590,7 +603,7 @@ bool FileXferServer::onMKDIR_Command(const char * directory)
    {
       fn += currentDir.getCurrentDirectory() + directory; //append current directory to file-name
    }
-   //try to delete the given file
+   //try to make the given directory
    int err = mkdir(fn.c_str(), 0777);
    if (err == 0)
    {
@@ -679,7 +692,7 @@ bool FileXferServer::onUPLOAD_Command(const char * filename, unsigned int size)
       state = FILE_XFER_SERVER_STATE_UPLOADING; //set server into uploading state
       uploadFileSize = size; //store number of bytes for upload
       ctrlChannel->send(&ACK, 1); //acknowledge command
-      std::cout << "UPLOAD command scheduled!" << endl;
+      std::cout << "UPLOAD command scheduled! Len=" << size << endl;
       return true;
    }
    return false;

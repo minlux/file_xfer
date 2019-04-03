@@ -6,6 +6,7 @@
 //-----------------------------------------------------------------------------
 
 /* -- Includes ------------------------------------------------------------ */
+#include <stdio.h>
 #include <iostream>
 #include "file_xfer_client.h"
 #include "file_xfer.h"
@@ -23,7 +24,7 @@ using namespace std;
 /* -- Implementation ------------------------------------------------------ */
 
 
-FileXferClient::FileXferClient(Slay2Channel * ctrl, Slay2Channel * data, const char * root)
+FileXferClient::FileXferClient(Slay2Channel * ctrl, Slay2Channel * data, FileXferClientApp * app)
 {
    //init control channel
    ctrlChannel = ctrl;
@@ -31,35 +32,483 @@ FileXferClient::FileXferClient(Slay2Channel * ctrl, Slay2Channel * data, const c
    //init data channel
    dataChannel = data;
    dataChannel->setReceiver(FileXferClient::onDataFrame, this);
+   //application callbacks
+   this->app = app;
+   //internals
+   // srcDstFile = 0;
+   ctrlState = 0;
+   dataState = 0;
+   time1ms = 0;
+   timeout1ms = 0;
+   uploadFileSize = 0;
+   downloadFileSize = 0;
+}
+
+//request working directory of server
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+int FileXferClient::workingDirectory()
+{
+   if (ctrlChannel->getTxBufferSize() >= 1)
+   {
+      const unsigned char command = FILE_XFER_CMD_PWD;
+      ctrlChannel->send(&command, 1);
+      ctrlState = FILE_XFER_CMD_PWD;
+      return 0;
+   }
+   return -1;
 }
 
 
-void FileXferClient::task(void)
+//request server to change (working) directory to the given <path>
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+int FileXferClient::changeDirectory(const std::string& path)
 {
+   int pathLength = path.length() + 1; //one more for the zero termination
+   if (ctrlChannel->getTxBufferSize() > pathLength) //one more for the leading command byte
+   {
+      const unsigned char command = FILE_XFER_CMD_CD;
+      ctrlChannel->send(&command, 1, true);
+      ctrlChannel->send((const unsigned char *)path.c_str(), pathLength);
+      ctrlState = FILE_XFER_CMD_CD;
+      return 0;
+   }
+   return -1;
+}
+
+
+
+//request server to list (content of working) directory
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+//-2, failed, because client isn't idle!
+int FileXferClient::listDirectory()
+{
+   //check for idle condition
+   if (dataState != 0) //not idle?
+   {
+      return -2;
+   }
+   //check for enough tx buffer
+   if (ctrlChannel->getTxBufferSize() >= 1)
+   {
+      const unsigned char command = FILE_XFER_CMD_LS;
+      ctrlChannel->send(&command, 1);
+      ctrlState = FILE_XFER_CMD_LS;
+      dataState = FILE_XFER_CMD_LS;
+      directoryList = "";
+      return 0;
+   }
+   return -1;
+}
+
+
+//request server to change (working) directory and list its content
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+//-2, failed, because client isn't idle!
+int FileXferClient::changeListDirectory(const std::string& path)
+{
+   //check for idle condition
+   if (dataState != 0) //not idle?
+   {
+      return -2;
+   }
+   //check for enough tx buffer
+   int pathLength = path.length() + 1; //one more for the zero termination
+   if (ctrlChannel->getTxBufferSize() > pathLength) //one more for the leading command byte
+   {
+      const unsigned char command = FILE_XFER_CMD_DIR;
+      ctrlChannel->send(&command, 1, true);
+      ctrlChannel->send((const unsigned char *)path.c_str(), pathLength);
+      ctrlState = FILE_XFER_CMD_DIR;
+      dataState = FILE_XFER_CMD_DIR;
+      directoryList = "";
+      return 0;
+   }
+   return -1;
+}
+
+
+
+//request server to create the given directory (given by path)
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+int FileXferClient::makeDirectory(const std::string& path)
+{
+   int pathLength = path.length() + 1; //one more for the zero termination
+   if (ctrlChannel->getTxBufferSize() > pathLength) //one more for the leading command byte
+   {
+      const unsigned char command = FILE_XFER_CMD_MKDIR;
+      ctrlChannel->send(&command, 1, true);
+      ctrlChannel->send((const unsigned char *)path.c_str(), pathLength);
+      ctrlState = FILE_XFER_CMD_MKDIR;
+      return 0;
+   }
+   return -1;
+}
+
+//request server to delete the given file or directory (given by path)
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+int FileXferClient::removeFile(const std::string& path)
+{
+   int pathLength = path.length() + 1; //one more for the zero termination
+   if (ctrlChannel->getTxBufferSize() > pathLength) //one more for the leading command byte
+   {
+      const unsigned char command = FILE_XFER_CMD_RM;
+      ctrlChannel->send(&command, 1, true);
+      ctrlChannel->send((const unsigned char *)path.c_str(), pathLength);
+      ctrlState = FILE_XFER_CMD_RM;
+      return 0;
+   }
+   return -1;
+}
+
+
+//request to download given source-file from server and store it to the given destination
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+//-2, failed, because client isn't idle!
+//-3, failed, because destination file not writeable
+int FileXferClient::downloadFile(const std::string& source, const std::string& destination)
+{
+   //check for idle condition
+   if (dataState != 0) //not idle?
+   {
+      return -2;
+   }
+   //check for enough tx buffer
+   int srcLength = source.length() + 1; //one more for the zero termination
+   if (ctrlChannel->getTxBufferSize() > srcLength) //one more for the leading command byte
+   {
+      //open destination file
+      FileXferClientApp::FileHandle_t dstFile;
+      if (app->openFileForWrite(destination, &dstFile));
+      {
+         const unsigned char command = FILE_XFER_CMD_DOWNLOAD;
+         ctrlChannel->send(&command, 1, true);
+         ctrlChannel->send((const unsigned char *)source.c_str(), srcLength);
+         ctrlState = FILE_XFER_CMD_DOWNLOAD;
+         dataState = FILE_XFER_CMD_DOWNLOAD;
+         downloadFileSize = 0; //will be set in the response
+         srcDstFile = dstFile; //
+         return 0;
+      }
+      return -3;
+   }
+   return -1;
+}
+
+
+//request to upload given source-file to server and store it there to the given destination
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+//-2, failed, because client isn't idle!
+//-3, failed, because source file can'b be read
+int FileXferClient::uploadFile(const std::string& source, const std::string& destination)
+{
+   //check for idle condition
+   if (dataState != 0) //not idle?
+   {
+      return -2;
+   }
+   //check for enough tx buffer
+   int dstLength = destination.length();
+   if (ctrlChannel->getTxBufferSize() > (dstLength + 11)) //one more for the leading command byte and about 11 bytes to specify the length of the file (in bytes)
+   {
+      //open source file
+      FileXferClientApp::FileHandle_t srcFile;
+      if (app->openFileForRead(source, &srcFile));
+      {
+         const unsigned char command = FILE_XFER_CMD_UPLOAD;
+         char buffer[16];
+         int len;
+
+         ctrlChannel->send(&command, 1, true);
+         ctrlChannel->send((const unsigned char *)destination.c_str(), dstLength, true);
+         uploadFileSize = app->getFileSize(srcFile);
+         len = sprintf(buffer, ",%d", (int)uploadFileSize);
+         ctrlChannel->send((const unsigned char *)buffer, len + 1); //include zero termination
+         ctrlState = FILE_XFER_CMD_UPLOAD;
+         dataState = FILE_XFER_CMD_UPLOAD;
+         srcDstFile = srcFile; //
+         return 0;
+      }
+      return -3;
+   }
+   return -1;
+}
+
+
+//
+//request server to quit ongoing transfer/operation
+//return:
+//0, on success
+//-1, failed to send request (not enough TX buffer)
+int FileXferClient::quit()
+{
+   if (ctrlChannel->getTxBufferSize() >= 1)
+   {
+      const unsigned char command = FILE_XFER_CMD_QUIT;
+      ctrlChannel->send(&command, 1);
+      ctrlState = FILE_XFER_CMD_QUIT;
+      timeout1ms = time1ms + 3000; //force quit, if there is no response withing 3 seconds
+      return 0;
+   }
+   return -1;
+}
+
+
+
+
+void FileXferClient::task(unsigned long time1ms)
+{
+   this->time1ms = time1ms; //set current time
+
+   switch (dataState)
+   {
+   case FILE_XFER_CMD_UPLOAD:
+      doFileUpload();
+      break;
+
+   default:
+      break;
+   }
+
+
+   //check for timeout
+   if ((timeout1ms != 0) && (time1ms > timeout1ms))
+   {
+      doQuit();
+   }
 }
 
 
 void FileXferClient::onCtrlFrame(void * const obj, const unsigned char * const data, const unsigned int len)
 {
-   //forward to member function
-   ((FileXferClient *)obj)->onCtrlFrame(data, len);
+   // cout << "onCtrlFrame is called. len=" << len << endl;
+   if (len > 0)
+   {
+      //ensure zero termination of data...
+      ((unsigned char *)data)[len] = 0; //thats a hack ... but works mit SLAY2 :-)
+      // cout << data << endl;
+       //forward to member function
+      ((FileXferClient *)obj)->onCtrlFrame(data, len);
+   }
 }
 void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigned int len)
 {
-   ((unsigned char *)data)[len] = 0; //thats a hack, to add zero termination
-   cout << "CTRL (" << len << ")" << endl;
-   cout << (char *)data << endl;
+   const int ack = (data[0] == FILE_XFER_CMD_ACK);
+
+   switch (ctrlState)
+   {
+   case FILE_XFER_CMD_PWD:
+      app->onPwdResponse(ack, (const char *)&data[1]);
+      break;
+
+   case FILE_XFER_CMD_CD:
+      app->onCdResponse(ack, (const char *)&data[1]);
+      break;
+
+   case FILE_XFER_CMD_LS:
+      if (ack == 0) //negative acknowledge?
+      {
+         app->onLsResponse(ack, (const char *)&data[1]);
+         dataState = 0;
+      }
+      //there is nothing todo here, in case of positive ACK (see "onDataFrame" for this case)
+      break;
+
+   case FILE_XFER_CMD_DIR:
+      if (ack == 0) //negative acknowledge?
+      {
+         app->onDirResponse(ack, (const char *)&data[1]);
+         dataState = 0;
+      }
+      //there is nothing todo here, in case of positive ACK (see "onDataFrame" for this case)
+      break;
+
+   case FILE_XFER_CMD_MKDIR:
+      app->onMkdirResponse(ack);
+      break;
+
+   case FILE_XFER_CMD_RM:
+      app->onRmResponse(ack);
+      break;
+
+   case FILE_XFER_CMD_DOWNLOAD:
+      if (ack == 0) //negative acknowledge?
+      {
+         app->onDownloadResponse(ack);
+         dataState = 0;
+      }
+      else
+      {
+         downloadFileSize = atoi((const char *)&data[1]);
+      }
+      break;
+
+   case FILE_XFER_CMD_UPLOAD:
+      if (ack == 0) //negative acknowledge?
+      {
+         app->onUploadResponse(ack);
+         dataState = 0;
+      }
+      //there is nothing todo here, in case of positive ACK (see "onDataFrame" for this case)
+      break;
+
+   case FILE_XFER_CMD_QUIT:
+      doQuit();
+      break;
+
+   default: //IDLE
+      break;
+   }
+
+   //set ctrl state to IDLE
+   ctrlState = 0;
 }
 
 
 void FileXferClient::onDataFrame(void * const obj, const unsigned char * const data, const unsigned int len)
 {
-   //forward to member function
-   ((FileXferClient *)obj)->onDataFrame(data, len);
+   // cout << "onDataFrame is called. len=" << len << endl;
+   if (len > 0)
+   {
+      //ensure zero termination of data...
+      ((unsigned char *)data)[len] = 0; //thats a hack ... but works mit SLAY2 :-)   //forward to member function
+      // cout << data << endl;
+      //forward to member function
+      ((FileXferClient *)obj)->onDataFrame(data, len);
+   }
 }
 void FileXferClient::onDataFrame(const unsigned char * const data, const unsigned int len)
 {
-   ((unsigned char *)data)[len] = 0; //thats a hack, to add zero termination
-   cout << "DATA (" << len << ")" << endl;
-   cout << (char *)data << endl;
+   switch (dataState)
+   {
+      case FILE_XFER_CMD_LS:
+      {
+         directoryList += (const char *)data;
+         if (data[len -1] == 0) //end of listing
+         {
+            app->onLsResponse(1, directoryList);
+            dataState = 0;
+         }
+         break;
+      }
+
+
+      case FILE_XFER_CMD_DIR:
+      {
+         directoryList += (const char *)data;
+         if (data[len -1] == 0) //end of listing
+         {
+            app->onDirResponse(1, directoryList);
+            dataState = 0;
+         }
+         break;
+      }
+
+
+      case FILE_XFER_CMD_DOWNLOAD:
+      {
+         //do limitation
+         size_t dataLen = len;
+         if (dataLen > downloadFileSize)
+         {
+            dataLen = downloadFileSize;
+         }
+         //write data to file
+         app->writeToFile(srcDstFile, data, dataLen);
+         downloadFileSize -= dataLen;
+         if (downloadFileSize == 0) //end of data
+         {
+            //close file
+            app->closeFile(srcDstFile);
+            //notify application about end of download
+            app->onDownloadResponse(1);
+            dataState = 0;
+         }
+         break;
+      }
+
+
+      case FILE_XFER_CMD_UPLOAD:
+      {
+         //acknowledge of file upload expected here
+         //if (data[0] == FILE_XFER_CMD_ACK) {
+         //notify application, that upload has completed
+         app->onUploadResponse(1);
+         dataState = 0;
+         break;
+      }
+   }
 }
+
+
+
+void FileXferClient::doFileUpload()
+{
+   //if there are data for upload, we must ensure that there is enough free space in tx buffer
+   while ((uploadFileSize != 0) &&
+          (dataChannel->getTxBufferSpace() >= 256))
+   {
+      unsigned char buffer[256];
+      unsigned int count;
+
+      //read out file and send data to server
+      count = app->readFromFile(srcDstFile, buffer, sizeof(buffer));
+      if (count > 0)
+      {
+         dataChannel->send(buffer, count);
+      }
+
+      //handle end of file
+      if (uploadFileSize > count)
+      {
+         uploadFileSize -= count;
+      }
+      else
+      {
+         uploadFileSize = 0;
+      }
+      if ((count == 0) || (uploadFileSize == 0))
+      {
+         app->closeFile(srcDstFile); //close file
+      }
+   }
+}
+
+
+void FileXferClient::doQuit()
+{
+   timeout1ms = 0;
+   ctrlState = 0;
+   dataState = 0;
+   uploadFileSize = 0;
+   downloadFileSize = 0;
+   //close file (if open)
+   app->closeFile(srcDstFile);
+   //flush communication channels
+   ctrlChannel->flushTxBuffer();
+   dataChannel->flushTxBuffer();
+   //notify application
+   app->onQuitResponse(1);
+}
+
+
+bool FileXferClient::isIdle()
+{
+   return ((ctrlState == 0) && (dataState == 0));
+}
+
