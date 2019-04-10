@@ -24,18 +24,27 @@ using namespace std;
 /* -- Implementation ------------------------------------------------------ */
 
 
+FileXferClient::FileXferClient(FileXferClientApp * app)
+{
+   init();
+   this->app = app;
+}
+
+
 FileXferClient::FileXferClient(Slay2Channel * ctrl, Slay2Channel * data, FileXferClientApp * app)
 {
-   //init control channel
-   ctrlChannel = ctrl;
-   ctrlChannel->setReceiver(FileXferClient::onCtrlFrame, this);
-   //init data channel
-   dataChannel = data;
-   dataChannel->setReceiver(FileXferClient::onDataFrame, this);
-   //application callbacks
+   init();
    this->app = app;
-   //internals
-   // srcDstFile = 0;
+   use(ctrl, data);
+}
+
+
+void FileXferClient::init()
+{
+   app = NULL;
+   ctrlChannel = NULL;
+   dataChannel = NULL;
+   srcDstFile = FILE_XFER_CLIENT_INVALID_FILE_HANDLE;
    ctrlState = 0;
    dataState = 0;
    time1ms = 0;
@@ -43,6 +52,20 @@ FileXferClient::FileXferClient(Slay2Channel * ctrl, Slay2Channel * data, FileXfe
    uploadFileSize = 0;
    downloadFileSize = 0;
 }
+
+
+void FileXferClient::use(Slay2Channel * ctrl, Slay2Channel * data)
+{
+   //init control channel
+   ctrlChannel = ctrl;
+   ctrlChannel->setReceiver(FileXferClient::_onCtrlFrameAsync, this);
+   //init data channel
+   dataChannel = data;
+   dataChannel->setReceiver(FileXferClient::_onDataFrameAsync, this);
+}
+
+
+
 
 //request working directory of server
 //return:
@@ -192,7 +215,7 @@ int FileXferClient::downloadFile(const std::string& source, const std::string& d
    {
       //open destination file
       FileXferClientApp::FileHandle_t dstFile;
-      if (app->openFileForWrite(destination, &dstFile));
+      if (app->openFileForWrite(destination, &dstFile))
       {
          const unsigned char command = FILE_XFER_CMD_DOWNLOAD;
          ctrlChannel->send(&command, 1, true);
@@ -228,7 +251,7 @@ int FileXferClient::uploadFile(const std::string& source, const std::string& des
    {
       //open source file
       FileXferClientApp::FileHandle_t srcFile;
-      if (app->openFileForRead(source, &srcFile));
+      if (app->openFileForRead(source, &srcFile))
       {
          const unsigned char command = FILE_XFER_CMD_UPLOAD;
          char buffer[16];
@@ -273,8 +296,36 @@ int FileXferClient::quit()
 
 void FileXferClient::task(unsigned long time1ms)
 {
-   this->time1ms = time1ms; //set current time
+   //set current time
+   this->time1ms = time1ms;
 
+   //handle reception
+   //check for received control bytes
+   if (ctrlRxBuffer.getCount()) //some pending control bytes?
+   {
+      unsigned char * data;
+      unsigned int len;
+      //process buffered data - within a critial section
+      ctrlChannel->enterCritical();
+      len = ctrlRxBuffer.top(&data); //assert len > 0 (as getCount returned > 0)
+      onCtrlFrame(data, len);
+      ctrlRxBuffer.pop(len); //drop that bytes away
+      ctrlChannel->leaveCritical();
+   }
+   //check for received data bytes
+   if (dataRxBuffer.getCount()) //some pending control bytes?
+   {
+      unsigned char * data;
+      unsigned int len;
+      //process buffered data - within a critial section
+      dataChannel->enterCritical();
+      len = dataRxBuffer.top(&data); //assert len > 0 (as getCount returned > 0)
+      onDataFrame(data, len);
+      dataRxBuffer.pop(len); //drop that bytes away
+      dataChannel->leaveCritical();
+   }
+
+   //handle transmission
    switch (dataState)
    {
    case FILE_XFER_CMD_UPLOAD:
@@ -285,7 +336,6 @@ void FileXferClient::task(unsigned long time1ms)
       break;
    }
 
-
    //check for timeout
    if ((timeout1ms != 0) && (time1ms > timeout1ms))
    {
@@ -294,18 +344,27 @@ void FileXferClient::task(unsigned long time1ms)
 }
 
 
-void FileXferClient::onCtrlFrame(void * const obj, const unsigned char * const data, const unsigned int len)
+//The async functions are within the execution context of "Slay2" (slay2.task)!
+//This may be different to the context of "FileXferClient" (fileXferClient.task).
+//That means, these functions may be called aysnchronously!
+void FileXferClient::_onCtrlFrameAsync(void * const obj, const unsigned char * const data, const unsigned int len)
 {
-   // cout << "onCtrlFrame is called. len=" << len << endl;
    if (len > 0)
    {
-      //ensure zero termination of data...
-      ((unsigned char *)data)[len] = 0; //thats a hack ... but works mit SLAY2 :-)
-      // cout << data << endl;
-       //forward to member function
-      ((FileXferClient *)obj)->onCtrlFrame(data, len);
+      //forward to member function
+      ((FileXferClient *)obj)->onCtrlFrameAsync(data, len);
    }
 }
+void FileXferClient::onCtrlFrameAsync(const unsigned char * const data, const unsigned int len)
+{
+   //push data into buffer - within a critial section
+   ctrlChannel->enterCritical();
+   ctrlRxBuffer.push(data, len);
+   ctrlChannel->leaveCritical();
+}
+
+//this method is called "synchronously" by method "task()". It takes its data out of the buffer,
+//that was filled asynchronously!
 void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigned int len)
 {
    const int ack = (data[0] == FILE_XFER_CMD_ACK);
@@ -380,18 +439,28 @@ void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigne
 }
 
 
-void FileXferClient::onDataFrame(void * const obj, const unsigned char * const data, const unsigned int len)
+//The async functions are within the execution context of "Slay2" (slay2.task)!
+//This may be different to the context of "FileXferClient" (fileXferClient.task).
+//That means, these functions may be called aysnchronously!
+void FileXferClient::_onDataFrameAsync(void * const obj, const unsigned char * const data, const unsigned int len)
 {
-   // cout << "onDataFrame is called. len=" << len << endl;
    if (len > 0)
    {
-      //ensure zero termination of data...
-      ((unsigned char *)data)[len] = 0; //thats a hack ... but works mit SLAY2 :-)   //forward to member function
-      // cout << data << endl;
       //forward to member function
-      ((FileXferClient *)obj)->onDataFrame(data, len);
+      ((FileXferClient *)obj)->onDataFrameAsync(data, len);
    }
 }
+void FileXferClient::onDataFrameAsync(const unsigned char * const data, const unsigned int len)
+{
+   //push data into buffer - within a critial section
+   dataChannel->enterCritical();
+   dataRxBuffer.push(data, len);
+   dataChannel->leaveCritical();
+}
+
+
+//this method is called "synchronously" by method "task()". It takes its data out of the buffer,
+//that was filled asynchronously!
 void FileXferClient::onDataFrame(const unsigned char * const data, const unsigned int len)
 {
    switch (dataState)
@@ -434,7 +503,7 @@ void FileXferClient::onDataFrame(const unsigned char * const data, const unsigne
          if (downloadFileSize == 0) //end of data
          {
             //close file
-            app->closeFile(srcDstFile);
+            srcDstFile = app->closeFile(srcDstFile);
             //notify application about end of download
             app->onDownloadResponse(1);
             dataState = 0;
@@ -484,7 +553,7 @@ void FileXferClient::doFileUpload()
       }
       if ((count == 0) || (uploadFileSize == 0))
       {
-         app->closeFile(srcDstFile); //close file
+         srcDstFile = app->closeFile(srcDstFile); //close file
       }
    }
 }
@@ -498,7 +567,7 @@ void FileXferClient::doQuit()
    uploadFileSize = 0;
    downloadFileSize = 0;
    //close file (if open)
-   app->closeFile(srcDstFile);
+   srcDstFile = app->closeFile(srcDstFile);
    //flush communication channels
    ctrlChannel->flushTxBuffer();
    dataChannel->flushTxBuffer();

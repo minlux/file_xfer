@@ -13,6 +13,7 @@
 
 
 /* -- Defines ------------------------------------------------------------- */
+#define FILE_XFER_CLIENT_INVALID_FILE_HANDLE   ((void *)-1)
 
 
 /* -- Types --------------------------------------------------------------- */
@@ -20,7 +21,21 @@
 class FileXferClientApp
 {
 public:
-   typedef long FileHandle_t;
+   typedef void * FileHandle_t;
+
+   typedef enum
+   {
+      //protocol events
+      ON_QUIT_RESPONSE = 1,
+      ON_PWD_RESPONSE,
+      ON_CD_RESPONSE,
+      ON_MKDIR_RESPONSE,
+      ON_RM_RESPONSE,
+      ON_LS_RESPONSE,
+      ON_DIR_RESPONSE,
+      ON_DL_RESPONSE,
+      ON_UL_RESPONSE
+   } Event_t;
 
 public:
    virtual void onPwdResponse(int status, const std::string& dir) = 0;
@@ -39,7 +54,7 @@ public:
    virtual size_t getFileSize(FileHandle_t file) = 0;
    virtual size_t readFromFile(FileHandle_t file, unsigned char * buffer, size_t bufferSize) = 0;
    virtual size_t writeToFile(FileHandle_t file, const unsigned char * data, size_t length) = 0;
-   virtual void closeFile(FileHandle_t file) = 0;
+   virtual FileHandle_t closeFile(FileHandle_t file = FILE_XFER_CLIENT_INVALID_FILE_HANDLE) = 0;
 };
 
 
@@ -47,7 +62,9 @@ public:
 class FileXferClient
 {
 public:
+   FileXferClient(FileXferClientApp * app);
    FileXferClient(Slay2Channel * ctrl, Slay2Channel * data, FileXferClientApp * app);
+   void use(Slay2Channel * ctrl, Slay2Channel * data); //for use in combination with FileXferClient(FileXferClientApp * app)
    void task(unsigned long time1ms);
 
    //pwd
@@ -85,16 +102,21 @@ public:
 protected:
 
 private:
-   static void onCtrlFrame(void * const obj, const unsigned char * const data, const unsigned int len); //wrapper to forward to member function
+   void init();
+   static void _onCtrlFrameAsync(void * const obj, const unsigned char * const data, const unsigned int len); //wrapper to forward to member function
+   void onCtrlFrameAsync(const unsigned char * const data, const unsigned int len);
    void onCtrlFrame(const unsigned char * const data, const unsigned int len);
-   static void onDataFrame(void * const obj, const unsigned char * const data, const unsigned int len); //wrapper to forward to member function
+   static void _onDataFrameAsync(void * const obj, const unsigned char * const data, const unsigned int len); //wrapper to forward to member function
+   void onDataFrameAsync(const unsigned char * const data, const unsigned int len);
    void onDataFrame(const unsigned char * const data, const unsigned int len);
 
    void doFileUpload();
    void doQuit();
 
    Slay2Channel * ctrlChannel;
+   Slay2LinearFifo ctrlRxBuffer;
    Slay2Channel * dataChannel;
+   Slay2LinearFifo dataRxBuffer;
 
    FileXferClientApp * app;
    FileXferClientApp::FileHandle_t srcDstFile;

@@ -146,7 +146,7 @@ public:
    bool openFileForRead(const std::string& file, FileHandle_t * handle)
    {
       cout << "openFileForRead: " << file << endl;
-      *handle = 1;
+      *handle = (FileHandle_t)1;
       return true;
    }
 
@@ -154,7 +154,7 @@ public:
    bool openFileForWrite(const std::string& file, FileHandle_t * handle)
    {
       cout << "openFileForWrite: " << file << endl;
-      *handle = 2;
+      *handle = (FileHandle_t)2;
       return true;
    }
 
@@ -186,10 +186,13 @@ public:
    }
 
 
-   void closeFile(FileHandle_t file)
+   FileHandle_t closeFile(FileHandle_t file)
    {
-      cout << "closeFile" << endl;
-      //nothing todo
+      if (file != FILE_XFER_CLIENT_INVALID_FILE_HANDLE)
+      {
+         cout << "closeFile" << endl;
+      }
+      return FILE_XFER_CLIENT_INVALID_FILE_HANDLE;
    }
 };
 
