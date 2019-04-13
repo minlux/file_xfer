@@ -71,8 +71,9 @@ FileXferServer::FileXferServer(Slay2Channel * ctrl, Slay2Channel * data, const c
 //-------------------------------------------------------------------------------------------------
 void FileXferServer::onCtrlFrame(void * const obj, const unsigned char * const data, const unsigned int len)
 {
-   //ensure zero termination
-   ((unsigned char *)data)[len] = 0; //thats a hack ... but works mit SLAY2 :-)   //forward to member function
+   /* ensure zero termination: not needed, as SLAY2 data ARE zero terminated!
+   ((unsigned char *)data)[len] = 0; //thats a hack ... but works with SLAY2
+   */
    // cout << "onCtrlFrame is called. len=" << len << endl;
    // cout << data << endl;
 
@@ -312,8 +313,9 @@ void FileXferServer::onCtrlFrame(const unsigned char * const data, const unsigne
 //currently only used, when client uploads a file
 void FileXferServer::onDataFrame(void * const obj, const unsigned char * const data, const unsigned int len)
 {
-   //ensure zero termination
-   ((unsigned char *)data)[len] = 0; //thats a hack ... but works mit SLAY2 :-)   //forward to member function
+   /* ensure zero termination: not needed, as SLAY2 data ARE zero terminated!
+   ((unsigned char *)data)[len] = 0; //thats a hack ... but works with SLAY2
+   */
    // cout << "onDataFrame is called. len=" << len << endl;
    // cout << data << endl;
 
