@@ -23,20 +23,6 @@ class FileXferClientApp
 public:
    typedef void * FileHandle_t;
 
-   typedef enum
-   {
-      //protocol events
-      ON_QUIT_RESPONSE = 1,
-      ON_PWD_RESPONSE,
-      ON_CD_RESPONSE,
-      ON_MKDIR_RESPONSE,
-      ON_RM_RESPONSE,
-      ON_LS_RESPONSE,
-      ON_DIR_RESPONSE,
-      ON_DL_RESPONSE,
-      ON_UL_RESPONSE
-   } Event_t;
-
 public:
    virtual void onPwdResponse(int status, const std::string& dir) = 0;
    virtual void onCdResponse(int status, const std::string& dir) = 0;
@@ -114,9 +100,9 @@ private:
    void doQuit();
 
    Slay2Channel * ctrlChannel;
-   Slay2LinearFifo ctrlRxBuffer;
+   Slay2LinearFifo<1*1024> ctrlRxBuffer;
    Slay2Channel * dataChannel;
-   Slay2LinearFifo dataRxBuffer;
+   Slay2LinearFifo<10*1024> dataRxBuffer;
 
    FileXferClientApp * app;
    FileXferClientApp::FileHandle_t srcDstFile;

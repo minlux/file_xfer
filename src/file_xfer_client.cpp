@@ -78,6 +78,7 @@ int FileXferClient::workingDirectory()
       const unsigned char command = FILE_XFER_CMD_PWD;
       ctrlChannel->send(&command, 1);
       ctrlState = FILE_XFER_CMD_PWD;
+      timeout1ms = time1ms + 3000; //force quit, if there is no response withing 3 seconds
       return 0;
    }
    return -1;
@@ -97,6 +98,7 @@ int FileXferClient::changeDirectory(const std::string& path)
       ctrlChannel->send(&command, 1, true);
       ctrlChannel->send((const unsigned char *)path.c_str(), pathLength);
       ctrlState = FILE_XFER_CMD_CD;
+      timeout1ms = time1ms + 3000; //force quit, if there is no response withing 3 seconds
       return 0;
    }
    return -1;
@@ -123,6 +125,7 @@ int FileXferClient::listDirectory()
       ctrlChannel->send(&command, 1);
       ctrlState = FILE_XFER_CMD_LS;
       dataState = FILE_XFER_CMD_LS;
+      timeout1ms = time1ms + 3000; //force quit, if there is no response withing 3 seconds
       directoryList = "";
       return 0;
    }
@@ -151,6 +154,7 @@ int FileXferClient::changeListDirectory(const std::string& path)
       ctrlChannel->send((const unsigned char *)path.c_str(), pathLength);
       ctrlState = FILE_XFER_CMD_DIR;
       dataState = FILE_XFER_CMD_DIR;
+      timeout1ms = time1ms + 3000; //force quit, if there is no response withing 3 seconds
       directoryList = "";
       return 0;
    }
@@ -172,6 +176,7 @@ int FileXferClient::makeDirectory(const std::string& path)
       ctrlChannel->send(&command, 1, true);
       ctrlChannel->send((const unsigned char *)path.c_str(), pathLength);
       ctrlState = FILE_XFER_CMD_MKDIR;
+      timeout1ms = time1ms + 3000; //force quit, if there is no response withing 3 seconds
       return 0;
    }
    return -1;
@@ -190,6 +195,7 @@ int FileXferClient::removeFile(const std::string& path)
       ctrlChannel->send(&command, 1, true);
       ctrlChannel->send((const unsigned char *)path.c_str(), pathLength);
       ctrlState = FILE_XFER_CMD_RM;
+      timeout1ms = time1ms + 3000; //force quit, if there is no response withing 3 seconds
       return 0;
    }
    return -1;
@@ -224,6 +230,8 @@ int FileXferClient::downloadFile(const std::string& source, const std::string& d
          dataState = FILE_XFER_CMD_DOWNLOAD;
          downloadFileSize = 0; //will be set in the response
          srcDstFile = dstFile; //
+         //can't set a timeout her, as i don't know how long it takes to download the given file
+         //-> user is responsible to quit on failure
          return 0;
       }
       return -3;
@@ -265,6 +273,8 @@ int FileXferClient::uploadFile(const std::string& source, const std::string& des
          ctrlState = FILE_XFER_CMD_UPLOAD;
          dataState = FILE_XFER_CMD_UPLOAD;
          srcDstFile = srcFile; //
+         //can't set a timeout her, as i don't know how long it takes to upload the given file
+         //-> user is responsible to quit on failure
          return 0;
       }
       return -3;
@@ -285,8 +295,8 @@ int FileXferClient::quit()
       const unsigned char command = FILE_XFER_CMD_QUIT;
       ctrlChannel->send(&command, 1);
       ctrlState = FILE_XFER_CMD_QUIT;
-      timeout1ms = time1ms + 3000; //force quit, if there is no response withing 3 seconds
-      return 0;
+      timeout1ms = time1ms + 300; //force quit, if there is no response withing 300 ms
+      return 0;                    //(ich hab jetzt schon lange genug gewartet... Zu erlebt der User dann auch "gleich" eine Reaktion ...)
    }
    return -1;
 }
@@ -337,7 +347,11 @@ void FileXferClient::task(unsigned long time1ms)
    }
 
    //check for timeout
-   if ((timeout1ms != 0) && (time1ms > timeout1ms))
+   if (isIdle())
+   {
+      timeout1ms = 0;
+   }
+   else if ((timeout1ms != 0) && (time1ms > timeout1ms))
    {
       doQuit();
    }
@@ -367,8 +381,12 @@ void FileXferClient::onCtrlFrameAsync(const unsigned char * const data, const un
 //that was filled asynchronously!
 void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigned int len)
 {
-   const int ack = (data[0] == FILE_XFER_CMD_ACK);
+   //preset ctrl state to IDLE
+   const unsigned int ctrlState = this->ctrlState; //make a copy for futher use
+   this->ctrlState = 0;
 
+   //switch according to the copy
+   const int ack = (data[0] == FILE_XFER_CMD_ACK); //1 on ACK, 0 on NACK
    switch (ctrlState)
    {
    case FILE_XFER_CMD_PWD:
@@ -382,8 +400,8 @@ void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigne
    case FILE_XFER_CMD_LS:
       if (ack == 0) //negative acknowledge?
       {
-         app->onLsResponse(ack, (const char *)&data[1]);
          dataState = 0;
+         app->onLsResponse(ack, (const char *)&data[1]);
       }
       //there is nothing todo here, in case of positive ACK (see "onDataFrame" for this case)
       break;
@@ -391,8 +409,8 @@ void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigne
    case FILE_XFER_CMD_DIR:
       if (ack == 0) //negative acknowledge?
       {
-         app->onDirResponse(ack, (const char *)&data[1]);
          dataState = 0;
+         app->onDirResponse(ack, (const char *)&data[1]);
       }
       //there is nothing todo here, in case of positive ACK (see "onDataFrame" for this case)
       break;
@@ -408,8 +426,8 @@ void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigne
    case FILE_XFER_CMD_DOWNLOAD:
       if (ack == 0) //negative acknowledge?
       {
-         app->onDownloadResponse(ack);
          dataState = 0;
+         app->onDownloadResponse(ack);
       }
       else
       {
@@ -420,8 +438,8 @@ void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigne
    case FILE_XFER_CMD_UPLOAD:
       if (ack == 0) //negative acknowledge?
       {
-         app->onUploadResponse(ack);
          dataState = 0;
+         app->onUploadResponse(ack);
       }
       //there is nothing todo here, in case of positive ACK (see "onDataFrame" for this case)
       break;
@@ -433,9 +451,6 @@ void FileXferClient::onCtrlFrame(const unsigned char * const data, const unsigne
    default: //IDLE
       break;
    }
-
-   //set ctrl state to IDLE
-   ctrlState = 0;
 }
 
 
@@ -467,11 +482,12 @@ void FileXferClient::onDataFrame(const unsigned char * const data, const unsigne
    {
       case FILE_XFER_CMD_LS:
       {
+         timeout1ms = time1ms + 3000; //i got an response. so restart 3 seconds timeout
          directoryList += (const char *)data;
          if (data[len -1] == 0) //end of listing
          {
-            app->onLsResponse(1, directoryList);
             dataState = 0;
+            app->onLsResponse(1, directoryList);
          }
          break;
       }
@@ -479,11 +495,12 @@ void FileXferClient::onDataFrame(const unsigned char * const data, const unsigne
 
       case FILE_XFER_CMD_DIR:
       {
+         timeout1ms = time1ms + 3000; //i got an response. so restart 3 seconds timeout
          directoryList += (const char *)data;
          if (data[len -1] == 0) //end of listing
          {
-            app->onDirResponse(1, directoryList);
             dataState = 0;
+            app->onDirResponse(1, directoryList);
          }
          break;
       }
@@ -502,11 +519,11 @@ void FileXferClient::onDataFrame(const unsigned char * const data, const unsigne
          downloadFileSize -= dataLen;
          if (downloadFileSize == 0) //end of data
          {
+            dataState = 0;
             //close file
             srcDstFile = app->closeFile(srcDstFile);
             //notify application about end of download
             app->onDownloadResponse(1);
-            dataState = 0;
          }
          break;
       }
@@ -514,11 +531,11 @@ void FileXferClient::onDataFrame(const unsigned char * const data, const unsigne
 
       case FILE_XFER_CMD_UPLOAD:
       {
+         dataState = 0;
          //acknowledge of file upload expected here
          //if (data[0] == FILE_XFER_CMD_ACK) {
          //notify application, that upload has completed
          app->onUploadResponse(1);
-         dataState = 0;
          break;
       }
    }
