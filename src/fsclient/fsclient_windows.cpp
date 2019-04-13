@@ -22,7 +22,7 @@ using namespace std;
 /* -- Types --------------------------------------------------------------- */
 
 /* -- (Module) Global Variables ------------------------------------------- */
-const FSClient::FileHandle_t FSClient::INVALID_FILE_HANDLE = INVALID_FILE_HANDLE;
+const FSClient::FileHandle_t FSClient::INVALID_FILE_HANDLE = FSCLIENT_INVALID_FILE_HANDLE;
 
 /* -- Module Global Function Prototypes ----------------------------------- */
 
@@ -162,7 +162,7 @@ bool FSClient::removeFile(const string& file)
 
 
 
-bool FSClient::openFileForRead(string& file, FSClient::FileHandle_t * handle)
+bool FSClient::openFileForRead(const string& file, FSClient::FileHandle_t * handle)
 {
    string sysPath = makeSystemPath(file);
    HANDLE hFile = CreateFileA(sysPath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
@@ -172,11 +172,12 @@ bool FSClient::openFileForRead(string& file, FSClient::FileHandle_t * handle)
       *handle = (FSClient::FileHandle_t)hFile;
       return true;
    }
+   *handle = INVALID_FILE_HANDLE;
    return false;
 }
 
 
-bool FSClient::openFileForWrite(string& file, FSClient::FileHandle_t * handle)
+bool FSClient::openFileForWrite(const string& file, FSClient::FileHandle_t * handle)
 {
    string sysPath = makeSystemPath(file);
    HANDLE hFile = CreateFileA(sysPath.c_str(), GENERIC_WRITE, 0, NULL,
@@ -186,6 +187,7 @@ bool FSClient::openFileForWrite(string& file, FSClient::FileHandle_t * handle)
       *handle = (FSClient::FileHandle_t)hFile;
       return true;
    }
+   *handle = INVALID_FILE_HANDLE;
    return false;
 }
 
@@ -211,7 +213,7 @@ size_t FSClient::readFromFile(FSClient::FileHandle_t file, unsigned char * buffe
 }
 
 
-size_t FSClient::writeToFile(FSClient::FileHandle_t file, unsigned char * data, size_t length)
+size_t FSClient::writeToFile(FSClient::FileHandle_t file, const unsigned char * data, size_t length)
 {
    DWORD numBytesWritten = 0;
    if (file != INVALID_FILE_HANDLE)
@@ -242,10 +244,10 @@ FSClient::FileHandle_t FSClient::closeFile(FSClient::FileHandle_t file)
 //internal helper function
 string FSClient::makeSystemPath(const string& path)
 {
-   string fn;
-   //fn = path;
-   //if (path.find_first_of(':') < 0) //string does not contain ':' => it is not an system-absolute path (with directory like C:\....)
+   int pos = path.find_first_of(':');
+   if (pos < 0) //string does not contain ':' => it is not an system-absolute path (with directory like C:\....)
    {
+      string fn;
       if (path[0] == '\\') //relative to root?
       {
          fn = root + &path[1]; //prefix root
@@ -254,6 +256,7 @@ string FSClient::makeSystemPath(const string& path)
       {
          fn = root + currentDir.getCurrentDirectory() + path; //prefix root + current directory
       }
+      return fn;
    }
-   return fn;
+   return path;
 }

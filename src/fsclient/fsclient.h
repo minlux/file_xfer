@@ -34,21 +34,18 @@ public:
    bool makeDirectory(const std::string & dir); //MKDIR<dir>
    bool removeFile(const std::string& file); //RM<file>
 
-   bool openFileForRead(std::string& file, FileHandle_t * handle);
-   bool openFileForWrite(std::string& file, FileHandle_t * handle);
+   bool openFileForRead(const std::string& file, FileHandle_t * handle);
+   bool openFileForWrite(const std::string& file, FileHandle_t * handle);
    size_t getFileSize(FileHandle_t file);
 
    size_t readFromFile(FileHandle_t file, unsigned char * buffer, size_t bufferSize);
-   size_t writeToFile(FileHandle_t file, unsigned char * data, size_t length);
+   size_t writeToFile(FileHandle_t file, const unsigned char * data, size_t length);
 
    FileHandle_t closeFile(FileHandle_t file = FSCLIENT_INVALID_FILE_HANDLE);
 
-
-protected:
-
-private:
    std::string makeSystemPath(const std::string& path);
 
+private:
    std::string root;
    DirectoryNavigatorWindows currentDir;
 };
