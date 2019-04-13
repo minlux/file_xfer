@@ -79,7 +79,7 @@ int main(int argc, char * argv[])
    }
 
    //fxServer
-   FileXferServer fxServer(controlChannel, dataChannel);
+   FileXferServer fxServer(controlChannel, dataChannel, "/home/manuel/");
 
    //start application
    cout << "fx_server is using " << argv[1] << endl;
