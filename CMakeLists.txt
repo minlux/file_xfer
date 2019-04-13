@@ -15,6 +15,7 @@ add_executable(fx_server
    libs/slay2/slay2.cpp
    libs/slay2/slay2_linux.cpp
 )
+target_link_libraries(fx_server pthread)
 
 
 
@@ -27,3 +28,4 @@ add_executable(fx_client
    libs/slay2/slay2.cpp
    libs/slay2/slay2_linux.cpp
 )
+target_link_libraries(fx_client pthread)
