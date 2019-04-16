@@ -50,6 +50,12 @@ FileXferServer::FileXferServer(Slay2Channel * ctrl, Slay2Channel * data, const c
    listDirectory = NULL;
    uploadFile = NULL;
    downloadFile = NULL;
+
+   //check if "/" must be appended to "rootDir"
+   if (rootDir[rootDir.length() - 1] != '/')
+   {
+      rootDir += '/';
+   }
 }
 
 
@@ -74,8 +80,8 @@ void FileXferServer::onCtrlFrame(void * const obj, const unsigned char * const d
    /* ensure zero termination: not needed, as SLAY2 data ARE zero terminated!
    ((unsigned char *)data)[len] = 0; //thats a hack ... but works with SLAY2
    */
-   // cout << "onCtrlFrame is called. len=" << len << endl;
-   // cout << data << endl;
+//    cout << "onCtrlFrame is called. len=" << len << endl;
+//    cout << data << endl;
 
    //forward to member function
    ((FileXferServer *)obj)->onCtrlFrame(data, len);
@@ -434,6 +440,21 @@ bool FileXferServer::onCD_Command(const char * path, bool response)
       }
       return true;
    }
+   //Sonderbehandlung, fuer den Fall, dass Vorgangerpfad plotzlich nicht mehr existiert.
+   //Das koennte zB dann pasieren, wenn der Pfad zu einem USB Stick fuehrt, der entfernt wurde ...
+   //directory does not exists ... check if its an ancestor path to "current"
+   if (currentDir.isAncestorOrSelf(tmp))
+   {
+      //EXCEPTION!
+      //Tatsachlich! Jetzt kann ich nur noch zuruck nach "root"
+      currentDir.changeDirectory();
+      if (response)
+      {
+         ctrlChannel->send(&ACK, 1); //acknowledge command
+         std::cout << "Working directory changed to: /" << currentDir.getCurrentDirectory() << endl;
+      }
+      return true;
+   }
    //error
    return false;
 }
@@ -488,9 +509,21 @@ bool FileXferServer::onCD_Command(const char * path, bool response)
 //-------------------------------------------------------------------------------------------------
 bool FileXferServer::onLS_Command(bool response)
 {
-   const string& cwd = currentDir.getCurrentDirectory();
+   string cwd = currentDir.getCurrentDirectory();
    listDir = rootDir + cwd; //prefix root director
    listDirectory = opendir(listDir.c_str());
+   if (listDirectory == NULL) //EXCEPTION!
+   {
+      //Sonder-/Ausnahmebehandlung!
+      //Current working directory kann nicht geoffnet/gelesen werden.
+      //Das kann zB. dadurch passieren, dass CWD auf ein USB Stick zeigt, der entfernt wurde ...
+      //Jetzt kann ich nur noch zuruck nach "root"
+      currentDir.changeDirectory();
+      // ... und es nochmal probieren...
+      cwd = currentDir.getCurrentDirectory();
+      listDir = rootDir + cwd; //prefix root director
+      listDirectory = opendir(listDir.c_str());
+   }
    if (listDirectory != NULL)
    {
       //schedule LS command

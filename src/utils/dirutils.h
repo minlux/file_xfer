@@ -28,7 +28,9 @@ public:
    DirectoryNavigator(char delimiter = '/');
    std::string changeDirectory(std::string path = "");
    std::string getCurrentDirectory() const;
+   bool isAncestorOrSelf(const DirectoryNavigator rhs);
    static bool directoryExists(const std::string& path);
+
 
 private:
    static std::string parsePath(std::string path, char delimiter);

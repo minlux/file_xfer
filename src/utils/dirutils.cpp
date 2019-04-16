@@ -66,6 +66,28 @@ string DirectoryNavigator::getCurrentDirectory() const
 }
 
 
+//check if rhs-path is an ancestor of "my" current path. Or if pathes are equal
+bool DirectoryNavigator::isAncestorOrSelf(const DirectoryNavigator rhs)
+{
+   //1. rhs path must be shorter (or equal)
+   const string rhsCurrent = rhs.getCurrentDirectory();
+   const size_t rhsLen = rhsCurrent.length();
+   if (rhsLen <= current.length())
+   {
+      //2. path must be equal until to rhsLen
+      for (size_t idx = 0; idx < rhsLen; ++idx)
+      {
+         if (current[idx] != rhsCurrent[idx])
+         {
+            return false;
+         }
+      }
+      return true;
+   }
+   return false;
+}
+
+
 string DirectoryNavigator::parsePath(string path, const char delimiter)
 {
    const unsigned int pathLen = path.length(); //length
