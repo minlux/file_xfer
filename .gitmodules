@@ -1,0 +1,3 @@
+[submodule "libs/slay2"]
+	path = libs/slay2
+	url = https://github.com/minlux/slay2.git

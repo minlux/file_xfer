@@ -29,20 +29,16 @@ const FSClient::FileHandle_t FSClient::INVALID_FILE_HANDLE = FSCLIENT_INVALID_FI
 
 /* -- Implementation ------------------------------------------------------ */
 
-FSClient::FSClient(const string& root)
+FSClient::FSClient()
 {
-   this->root = root;
+   this->root = "\\";
 }
 
 
 
 string FSClient::workingDirectory()
 {
-#if 0
-   return (string)"\\" + currentDir.getCurrentDirectory();
-#else
    return root + currentDir.getCurrentDirectory();
-#endif
 }
 
 
@@ -51,18 +47,39 @@ bool FSClient::changeDirectory(const string& path)
    //try to change directory ..
    DirectoryNavigatorWindows tmp = currentDir; //use a copy for the try
    string newDir = tmp.changeDirectory(path);
-   if (DirectoryNavigatorWindows::directoryExists(root + newDir))
+   if (newDir.length() == 0) //Root existiert immer - hier die Auflistung
    {
       currentDir = tmp;
       return true;
+   }
+   else //if (newDir.length() >= 2) //es muss mindestens mit einem Laufwerksbuchstaben + ':' beginnen (z.B: "c:")
+   {
+      if (DirectoryNavigatorWindows::directoryExists(newDir))
+      {
+         currentDir = tmp;
+         return true;
+      }
    }
    return false;
 }
 
 
+
 string FSClient::listDirectory()
 {
    string directory = currentDir.getCurrentDirectory();
+   if (directory.length() == 0) //Laufwerke auflisten?
+   {
+      return _listDrives();
+   }
+   //othwise
+   return _listDirectory(directory);
+}
+
+
+
+string FSClient::_listDirectory(string& directory)
+{
    char buffer[64];
    WIN32_FIND_DATA fd;
    string list;
@@ -70,17 +87,19 @@ string FSClient::listDirectory()
 
    //first list entry, ist current directory
    list = ".,";
-#if 0
-   list += "\\";
-#else
    list += root;
-#endif
    list += directory;
    list += ",,\n"; //no size, no date
 
+   //Sonderbehandlung um Basisverzeichnis eines Laufwerks wieder zuruck zur Laufwerksauswahl zu gelangen
+   if (directory.length() <= 3) //z.B. "C:\"
+   {
+      list += "d,..,,\n"; //no size, no date for directories
+   }
 
-   //search for all files/directories in current directory (prefixed by "root-path")
-   directory = root + directory + "*";
+
+   //search for all files/directories in current directory
+   directory = directory + "*";
    HANDLE hFind = ::FindFirstFile(directory.c_str(), &fd);
    if(hFind != INVALID_FILE_HANDLE)
    {
@@ -128,36 +147,87 @@ string FSClient::listDirectory()
 }
 
 
+
+
+string FSClient::_listDrives()
+{
+   char drivePath[4] = { 0, ':', 0 };
+   // char buffer[64];
+   // WIN32_FIND_DATA fd;
+   DWORD driveMask;
+   char driveLetter;
+   string list;
+   string item;
+
+   //first list entry, ist current directory
+   list = ".,";
+   list += root;
+   list += ",,\n"; //no size, no date
+
+
+   //get bitmask of the available drives (bit 0 -> drive A, bit 1 -> drive B, bit 2 -> drive C, ...)
+   driveMask = GetLogicalDrives();
+   driveLetter = 'A';
+   while (driveMask != 0) //until all drives was tested
+   {
+      if ((driveMask & 1) != 0) //is this drive present?
+      {
+         //set "drive-item"
+         drivePath[0] = driveLetter;
+         item = "d,";
+         item += drivePath;
+         item += ",,\n"; //no size, no date for directories
+
+         //add to file list
+         list += item;
+      }
+      //prepare next
+      driveMask >>= 1;
+      driveLetter++;
+   }
+   return list;
+}
+
+
+
 bool FSClient::makeDirectory(const string& dir)
 {
    string sysPath = makeSystemPath(dir);
-   int status = CreateDirectoryA(sysPath.c_str(), NULL);
-   return (status != 0);
+   if (sysPath.length() > 0)
+   {
+      int status = CreateDirectoryA(sysPath.c_str(), NULL);
+      return (status != 0);
+   }
+   return false;
 }
 
 
 bool FSClient::removeFile(const string& file)
 {
    string sysPath = makeSystemPath(file);
-   DWORD attr = GetFileAttributesA(sysPath.c_str());
-   if (attr == (DWORD)-1) //INVALID_FILE_ATTRIBUTES
+   if (sysPath.length() > 0)
    {
-      return false;
-   }
+      DWORD attr = GetFileAttributesA(sysPath.c_str());
+      if (attr == (DWORD)-1) //INVALID_FILE_ATTRIBUTES
+      {
+         return false;
+      }
 
-   //otherwise
-   int status;
-   if ((attr & FILE_ATTRIBUTE_DIRECTORY) != 0) //directory
-   {
-      status = RemoveDirectoryA(sysPath.c_str());
+      //otherwise
+      int status;
+      if ((attr & FILE_ATTRIBUTE_DIRECTORY) != 0) //directory
+      {
+         status = RemoveDirectoryA(sysPath.c_str());
+      }
+      else //file
+      {
+         status = DeleteFileA(sysPath.c_str());
+         //int err = remove(sysPath.c_str());
+         //return (err == 0);
+      }
+      return (status != 0);
    }
-   else //file
-   {
-      status = DeleteFileA(sysPath.c_str());
-      //int err = remove(sysPath.c_str());
-      //return (err == 0);
-   }
-   return (status != 0);
+   return false;
 }
 
 
@@ -165,12 +235,15 @@ bool FSClient::removeFile(const string& file)
 bool FSClient::openFileForRead(const string& file, FSClient::FileHandle_t * handle)
 {
    string sysPath = makeSystemPath(file);
-   HANDLE hFile = CreateFileA(sysPath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
-                              OPEN_EXISTING, 0, NULL);
-   if (hFile != INVALID_FILE_HANDLE)
+   if (sysPath.length() > 0)
    {
-      *handle = (FSClient::FileHandle_t)hFile;
-      return true;
+      HANDLE hFile = CreateFileA(sysPath.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL,
+                                 OPEN_EXISTING, 0, NULL);
+      if (hFile != INVALID_FILE_HANDLE)
+      {
+         *handle = (FSClient::FileHandle_t)hFile;
+         return true;
+      }
    }
    *handle = INVALID_FILE_HANDLE;
    return false;
@@ -180,12 +253,15 @@ bool FSClient::openFileForRead(const string& file, FSClient::FileHandle_t * hand
 bool FSClient::openFileForWrite(const string& file, FSClient::FileHandle_t * handle)
 {
    string sysPath = makeSystemPath(file);
-   HANDLE hFile = CreateFileA(sysPath.c_str(), GENERIC_WRITE, 0, NULL,
-                              CREATE_ALWAYS, 0, NULL);
-   if (hFile != INVALID_FILE_HANDLE)
+   if (sysPath.length() > 0)
    {
-      *handle = (FSClient::FileHandle_t)hFile;
-      return true;
+      HANDLE hFile = CreateFileA(sysPath.c_str(), GENERIC_WRITE, 0, NULL,
+                                 CREATE_ALWAYS, 0, NULL);
+      if (hFile != INVALID_FILE_HANDLE)
+      {
+         *handle = (FSClient::FileHandle_t)hFile;
+         return true;
+      }
    }
    *handle = INVALID_FILE_HANDLE;
    return false;
@@ -245,18 +321,15 @@ FSClient::FileHandle_t FSClient::closeFile(FSClient::FileHandle_t file)
 string FSClient::makeSystemPath(const string& path)
 {
    int pos = path.find_first_of(':');
-   if (pos < 0) //string does not contain ':' => it is not an system-absolute path (with directory like C:\....)
+   if (pos > 0) //string contain ':' => it is an system-absolute path (with directory like C:\....)
    {
-      string fn;
-      if (path[0] == '\\') //relative to root?
-      {
-         fn = root + &path[1]; //prefix root
-      }
-      else //relative to current directory
-      {
-         fn = root + currentDir.getCurrentDirectory() + path; //prefix root + current directory
-      }
-      return fn;
+      return &path[pos - 1]; //Vollstandiger Pfad beginnt ein Zeichen vor dem Doppelpunkt
    }
-   return path;
+   //Ansonsten ist es ein wohl ein relativer Pfad
+   string cdir = currentDir.getCurrentDirectory();
+   if (cdir.length() >= 2) //aktueller Pfad muss in einem Laufwerk sein. Also mindestens sowas wie "C:"
+   {
+      return cdir + path;
+   }
+   return ""; //auf Root kann ich nicht schreiben!!!
 }

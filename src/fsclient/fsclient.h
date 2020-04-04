@@ -26,7 +26,7 @@ public:
 
 
 public:
-   FSClient(const std::string& root = "C:\\");
+   FSClient();
 
    std::string workingDirectory(); //PWD
    bool changeDirectory(const std::string& path = ""); //CD<path>
@@ -44,6 +44,10 @@ public:
    FileHandle_t closeFile(FileHandle_t file = FSCLIENT_INVALID_FILE_HANDLE);
 
    std::string makeSystemPath(const std::string& path);
+
+private:
+   std::string _listDrives();
+   std::string _listDirectory(std::string& directory);
 
 private:
    std::string root;
