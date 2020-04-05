@@ -1,0 +1,8 @@
+@startuml
+class FileXferServer {
+   FileXferServer(ctrl, data, root);
+   void task();
+}
+
+Slay2Channel --o FileXferServer
+@enduml

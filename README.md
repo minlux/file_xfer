@@ -17,50 +17,7 @@ Software architecture of an *file_xfer* client is shown below. `FileXferClient` 
 
 A client application is then just using the API functions of `FileXferClient` to invoke the desired operation, like browsing the servers file system (`changeDirectory()`, `listDirecotry()`, `makeDirectory()`, ...) or up- and downloading files to/from server (`uploadFile()`, `downloadFile()`).
 
-```puml
-@startuml
-abstract class FileXferClientApp {
-  {abstract} void onPwdResponse(status, dir) = 0
-  {abstract} void onCdResponse(status, dir) = 0
-  {abstract} void onLsResponse(status, dir) = 0
-  {abstract} void onDirResponse(status, dir) = 0
-  {abstract} void onMkdirResponse(status) = 0
-  {abstract} void onRmResponse(status) = 0
-  {abstract} void onDownloadResponse(status) = 0
-  {abstract} void onUploadResponse(status) = 0
-  {abstract} void onQuitResponse(status) = 0
-
-  {abstract} bool openFileForRead(file, handle) = 0
-  {abstract} bool openFileForWrite(file, handle) = 0
-  {abstract} size_t getFileSize(file) = 0
-  {abstract} size_t readFromFile(file, buffer, size) = 0
-  {abstract} size_t writeToFile(file, data, length) = 0
-  {abstract} void closeFile(file) = 0
-}
-
-
-class FileXferClient {
-   FileXferClient(ctrl, data, app);
-   void task();
-
-   int workingDirectory() //pwd
-   int changeDirectory(path) //cd <path>
-   int listDirectory() //ls
-   int changeListDirectory(path) //dir <path>
-   int makeDirectory(path) //mkdir <path>
-   int removeFile(path) //rm <path>
-   int downloadFile(source, destination) //download <file>
-   int uploadFile(source, destination) //upload <file>
-   int quit() //quit ongoing transfer/operation
-   bool isIdle()
-}
-
-FileXferClientApp <|-- ClientApp
-FileXferClientApp --o FileXferClient
-Slay2Channel --o FileXferClient
-
-@enduml
-```
+![client](doc/client.png)
 
 To "drive" the communication and to handle the response from the server, the application has to call `task()` cyclically. \
 Note: The *FileXferClientApp::functions* like `onLsResponse()` etc are executed in context of `task()`!
@@ -71,16 +28,8 @@ Note: The *FileXferClientApp::functions* like `onLsResponse()` etc are executed 
 The public interface and the efford needed to setup a *file_xfer* client is much or easier. It requiers also two `Slay2Channel`s as control and data channel.
 User can specifiy the directory used as the servers *root*. The the application must only call `task()` cyclically to "drive" the communication and to handle the incomming requests (and the file up-/download).
 
-```puml
-@startuml
-class FileXferServer {
-   FileXferServer(ctrl, data, root);
-   void task();
-}
+![server](doc/server.png)
 
-Slay2Channel --o FileXferServer
-@enduml
-```
 
 
 

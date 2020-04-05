@@ -1,0 +1,42 @@
+@startuml
+abstract class FileXferClientApp {
+  {abstract} void onPwdResponse(status, dir) = 0
+  {abstract} void onCdResponse(status, dir) = 0
+  {abstract} void onLsResponse(status, dir) = 0
+  {abstract} void onDirResponse(status, dir) = 0
+  {abstract} void onMkdirResponse(status) = 0
+  {abstract} void onRmResponse(status) = 0
+  {abstract} void onDownloadResponse(status) = 0
+  {abstract} void onUploadResponse(status) = 0
+  {abstract} void onQuitResponse(status) = 0
+
+  {abstract} bool openFileForRead(file, handle) = 0
+  {abstract} bool openFileForWrite(file, handle) = 0
+  {abstract} size_t getFileSize(file) = 0
+  {abstract} size_t readFromFile(file, buffer, size) = 0
+  {abstract} size_t writeToFile(file, data, length) = 0
+  {abstract} void closeFile(file) = 0
+}
+
+
+class FileXferClient {
+   FileXferClient(ctrl, data, app);
+   void task();
+
+   int workingDirectory() //pwd
+   int changeDirectory(path) //cd <path>
+   int listDirectory() //ls
+   int changeListDirectory(path) //dir <path>
+   int makeDirectory(path) //mkdir <path>
+   int removeFile(path) //rm <path>
+   int downloadFile(source, destination) //download <file>
+   int uploadFile(source, destination) //upload <file>
+   int quit() //quit ongoing transfer/operation
+   bool isIdle()
+}
+
+FileXferClientApp <|-- ClientApp
+FileXferClientApp --o FileXferClient
+Slay2Channel --o FileXferClient
+
+@enduml
