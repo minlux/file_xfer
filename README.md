@@ -13,7 +13,7 @@ Note: A channel can be considered as a serial point to point connection. *Slay2*
 ## Architecture
 
 ### Client
-Software architecture of an *file_xfer* client is shown below. `FileXferClient` is using two `Slay2Channel`s as control and data channel for for communiction. To interface with the hostes file system it is using an instance of `FileXferClientApp`. Therefore the application has to implement the pure virtual interface given by class `FileXferClientApp`.
+Software architecture of an *file_xfer* client is shown below. `FileXferClient` is using two `Slay2Channel`s as control and data channel for for communiction. To interface with the hosts file system it is using an instance of `FileXferClientApp`. Therefore the application has to implement the pure virtual interface given by class `FileXferClientApp`.
 
 A client application is then just using the API functions of `FileXferClient` to invoke the desired operation, like browsing the servers file system (`changeDirectory()`, `listDirecotry()`, `makeDirectory()`, ...) or up- and downloading files to/from server (`uploadFile()`, `downloadFile()`).
 
@@ -25,8 +25,7 @@ Note: The *FileXferClientApp::functions* like `onLsResponse()` etc are executed 
 
 
 ### Server
-The public interface and the efford needed to setup a *file_xfer* client is much or easier. It requiers also two `Slay2Channel`s as control and data channel.
-User can specifiy the directory used as the servers *root*. The the application must only call `task()` cyclically to "drive" the communication and to handle the incomming requests (and the file up-/download).
+The public interface and the efford needed to setup a *file_xfer* server is much or easier (than a client). It requiers also two `Slay2Channel`s as control and data channel. User can specifiy the directory used as the servers *root*. The the application must only call `task()` cyclically to "drive" the communication and to handle the incomming requests (and the file up-/download).
 
 ![server](doc/server.png)
 
@@ -88,7 +87,18 @@ Note: See appendix for information regarding the *directory listing*
 
 
 ## Demo
-This project comes with a demo application of a *dummy* client + server. In this demo, both participants are running on the same linux machine, using the linux tool *socat* (which create two interconnected serial devices, */dev/pts/1* and */dev/pts/2*) to connect client and server together.
+This project comes with a demo application (for linux) of a *dummy* client + server.
+
+### Build
+The demo can be build using cmake:
+```
+cd build
+cmake ..
+make
+```
+
+### Run
+The simplest way to for a test, is to run both participants on the same linux machine and use the linux tool *socat* (which create two interconnected serial devices, */dev/pts/1* and */dev/pts/2*) to connect client and server together. (However, there is a problem wiht that - see the following *Issues* section!)
 
 ```
 +---------------+
@@ -108,15 +118,6 @@ This project comes with a demo application of a *dummy* client + server. In this
 +--------------------------------------------------------------------------------------+
 ```
 
-### Build
-The demo can be build using cmake:
-```
-cd build
-cmake ..
-make
-```
-
-### Run
 First, run the *socat* command to create two interconnected serial devices:
 ```
 socat -d -d pty,raw,echo=0 pty,raw,echo=0
@@ -142,7 +143,7 @@ Now in the client you can enter some commands like:
 
 
 ### Issues
-There seems to be an issue when using the demo with *socat* (exactly as described in this paragraph). *socat* introduces a delay that leads to transmission timeouts in *slay2*. Thus it would be better to make a try of this software on two dedicated machines interconnected using a "real" serial connection (aka a Nullmodem-Cable).
+There seems to be an issue when using the demo with *socat* (exactly as described in this paragraph). *socat* introduces a delay that leads to transmission timeouts in *slay2*. Thus it would be better to make a try of this software using a "real" serial connection (aka a Nullmodem-Cable and do someting like `./fx_server /dev/ttyUSB0` and `./fx_client /dev/tty/1`).
 
 
 ## Appendix, Directory Listing
