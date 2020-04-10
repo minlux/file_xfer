@@ -227,7 +227,7 @@ int main(int argc, char * argv[])
 
    //init communiction driver
    Slay2Linux slay2;    //serial layer 2 protocol driver
-   bool stat = slay2.init(argv[1]);
+   bool stat = slay2.init(argv[1], 115200);
    if (stat == false)
    {
       cout << "Failed to open tty: " << argv[1] << endl;
